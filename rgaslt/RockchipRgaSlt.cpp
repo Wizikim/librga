@@ -340,6 +340,11 @@ int rgaNv12ScaleTest(bool prepare)
 
         ret = crc_verify(buf, size);
 
+	if (ret)
+		printf("#S74_RGA.0* #R0174_RGA.0*\n");
+	else
+		printf("#S74_RGA.0* #R0074_RGA.0*\n");
+
         ret = ret | mCtx.mAllocMod->unlock(mCtx.mAllocMod, dstHnd);
         printf("rga test exit\n");
         break;
