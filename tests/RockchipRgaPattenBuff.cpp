@@ -161,7 +161,7 @@ int main()
         memset(&rects, 0, sizeof(drm_rga_t));
         rga_set_rect(&rects.src, 0, 0, 1920, 1088, 1920, 21);
         rga_set_rect(&rects.dst, 200, 120, 1520, 800, 1920, 1);
-                
+        rkRga.RkRgaSetLogOnceFlag(1);
         ret = rkRga.RkRgaPaletteTable(gbd->handle, 0x8855aa03, &rects);
 
         if (ret) {

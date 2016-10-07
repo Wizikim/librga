@@ -280,9 +280,12 @@ int RockchipRga::RkRgaPaletteTable(buffer_handle_t dst,
         RkRgaMmuFlag(&rgaReg, srcMmuFlag, dstMmuFlag);
     }
 
+    if (mLogAlways || mLogOnce) 
+        RkRgaLogOutRgaReq(rgaReg);
+
     if(ioctl(rgaFd, RGA_BLIT_SYNC, &rgaReg)) {
-        printf(" %s(%d) RGA_BLIT fail",__FUNCTION__, __LINE__);
-        ALOGE(" %s(%d) RGA_BLIT fail",__FUNCTION__, __LINE__);
+        printf(" %s(%d) RGA_BLIT fail: %s",__FUNCTION__, __LINE__,strerror(errno));
+        ALOGE(" %s(%d) RGA_BLIT fail: %s",__FUNCTION__, __LINE__,strerror(errno));
     }
 
     if (mLogOnce)
@@ -663,8 +666,8 @@ int RockchipRga::RkRgaBlit(buffer_handle_t src,
     }
 
     if(ioctl(rgaFd, RGA_BLIT_SYNC, &rgaReg)) {
-        printf(" %s(%d) RGA_BLIT fail",__FUNCTION__, __LINE__);
-        ALOGE(" %s(%d) RGA_BLIT fail",__FUNCTION__, __LINE__);
+        printf(" %s(%d) RGA_BLIT fail: %s",__FUNCTION__, __LINE__,strerror(errno));
+        ALOGE(" %s(%d) RGA_BLIT fail: %s",__FUNCTION__, __LINE__,strerror(errno));
     }
 
     if (mLogOnce)
@@ -1016,8 +1019,8 @@ int RockchipRga::RkRgaBlit(void *src,
     }
 
     if(ioctl(rgaFd, RGA_BLIT_SYNC, &rgaReg)) {
-        printf(" %s(%d) RGA_BLIT fail",__FUNCTION__, __LINE__);
-        ALOGE(" %s(%d) RGA_BLIT fail",__FUNCTION__, __LINE__);
+        printf(" %s(%d) RGA_BLIT fail: %s",__FUNCTION__, __LINE__,strerror(errno));
+        ALOGE(" %s(%d) RGA_BLIT fail: %s",__FUNCTION__, __LINE__,strerror(errno));
     }
 
     return 0;
@@ -1366,8 +1369,8 @@ int RockchipRga::RkRgaBlit(buffer_handle_t src,
     }
 
     if(ioctl(rgaFd, RGA_BLIT_SYNC, &rgaReg)) {
-        printf(" %s(%d) RGA_BLIT fail",__FUNCTION__, __LINE__);
-        ALOGE(" %s(%d) RGA_BLIT fail",__FUNCTION__, __LINE__);
+        printf(" %s(%d) RGA_BLIT fail: %s",__FUNCTION__, __LINE__,strerror(errno));
+        ALOGE(" %s(%d) RGA_BLIT fail: %s",__FUNCTION__, __LINE__,strerror(errno));
     }
 
     return 0;
@@ -1708,14 +1711,82 @@ int RockchipRga::RkRgaBlit(void *src, void *dst,
     }
 
     if(ioctl(rgaFd, RGA_BLIT_SYNC, &rgaReg)) {
-        printf(" %s(%d) RGA_BLIT fail",__FUNCTION__, __LINE__);
-        ALOGE(" %s(%d) RGA_BLIT fail",__FUNCTION__, __LINE__);
+        printf(" %s(%d) RGA_BLIT fail: %s",__FUNCTION__, __LINE__,strerror(errno));
+        ALOGE(" %s(%d) RGA_BLIT fail: %s",__FUNCTION__, __LINE__,strerror(errno));
     }
 
     if (mLogOnce)
         mLogOnce = 0;
 
     return 0;
+}
+
+void RockchipRga::RkRgaLogOutRgaReq(struct rga_req rgaReg)
+{
+#if defined(__arm64__) || defined(__aarch64__)
+    ALOGD("src:[%lx,%lx,%lx],x-y[%d,%d],w-h[%d,%d],vw-vh[%d,%d],f=%d",
+        rgaReg.src.yrgb_addr, rgaReg.src.uv_addr, rgaReg.src.v_addr,
+        rgaReg.src.x_offset, rgaReg.src.y_offset,
+        rgaReg.src.act_w, rgaReg.src.act_h,
+        rgaReg.src.vir_w, rgaReg.src.vir_h, rgaReg.src.format);
+    ALOGD("dst:[%lx,%lx,%lx],x-y[%d,%d],w-h[%d,%d],vw-vh[%d,%d],f=%d",
+        rgaReg.dst.yrgb_addr, rgaReg.dst.uv_addr, rgaReg.dst.v_addr,
+        rgaReg.dst.x_offset, rgaReg.dst.y_offset,
+        rgaReg.dst.act_w, rgaReg.dst.act_h,
+        rgaReg.dst.vir_w, rgaReg.dst.vir_h, rgaReg.dst.format);
+    ALOGD("pat:[%lx,%lx,%lx],x-y[%d,%d],w-h[%d,%d],vw-vh[%d,%d],f=%d",
+        rgaReg.pat.yrgb_addr, rgaReg.pat.uv_addr, rgaReg.pat.v_addr,
+        rgaReg.pat.x_offset, rgaReg.pat.y_offset,
+        rgaReg.pat.act_w, rgaReg.pat.act_h,
+        rgaReg.pat.vir_w, rgaReg.pat.vir_h, rgaReg.pat.format);
+    printf("src:[%lx,%lx,%lx],x-y[%d,%d],w-h[%d,%d],vw-vh[%d,%d],f=%d\n",
+        rgaReg.src.yrgb_addr, rgaReg.src.uv_addr, rgaReg.src.v_addr,
+        rgaReg.src.x_offset, rgaReg.src.y_offset,
+        rgaReg.src.act_w, rgaReg.src.act_h,
+        rgaReg.src.vir_w, rgaReg.src.vir_h, rgaReg.src.format);
+    printf("dst:[%lx,%lx,%lx],x-y[%d,%d],w-h[%d,%d],vw-vh[%d,%d],f=%d\n",
+        rgaReg.dst.yrgb_addr, rgaReg.dst.uv_addr, rgaReg.dst.v_addr,
+        rgaReg.dst.x_offset, rgaReg.dst.y_offset,
+        rgaReg.dst.act_w, rgaReg.dst.act_h,
+        rgaReg.dst.vir_w, rgaReg.dst.vir_h, rgaReg.dst.format);
+    printf("pat:[%lx,%lx,%lx],x-y[%d,%d],w-h[%d,%d],vw-vh[%d,%d],f=%d\n",
+        rgaReg.pat.yrgb_addr, rgaReg.pat.uv_addr, rgaReg.pat.v_addr,
+        rgaReg.pat.x_offset, rgaReg.pat.y_offset,
+        rgaReg.pat.act_w, rgaReg.pat.act_h,
+        rgaReg.pat.vir_w, rgaReg.pat.vir_h, rgaReg.pat.format);
+#else
+    ALOGD("src:[%x,%x,%x],x-y[%d,%d],w-h[%d,%d],vw-vh[%d,%d],f=%d",
+        rgaReg.src.yrgb_addr, rgaReg.src.uv_addr, rgaReg.src.v_addr,
+        rgaReg.src.x_offset, rgaReg.src.y_offset,
+        rgaReg.src.act_w, rgaReg.src.act_h,
+        rgaReg.src.vir_w, rgaReg.src.vir_h, rgaReg.src.format);
+    ALOGD("dst:[%x,%x,%x],x-y[%d,%d],w-h[%d,%d],vw-vh[%d,%d],f=%d",
+        rgaReg.dst.yrgb_addr, rgaReg.dst.uv_addr, rgaReg.dst.v_addr,
+        rgaReg.dst.x_offset, rgaReg.dst.y_offset,
+        rgaReg.dst.act_w, rgaReg.dst.act_h,
+        rgaReg.dst.vir_w, rgaReg.dst.vir_h, rgaReg.dst.format);
+    ALOGD("pat:[%x,%x,%x],x-y[%d,%d],w-h[%d,%d],vw-vh[%d,%d],f=%d",
+        rgaReg.pat.yrgb_addr, rgaReg.pat.uv_addr, rgaReg.pat.v_addr,
+        rgaReg.pat.x_offset, rgaReg.pat.y_offset,
+        rgaReg.pat.act_w, rgaReg.pat.act_h,
+        rgaReg.pat.vir_w, rgaReg.pat.vir_h, rgaReg.pat.format);
+    printf("src:[%x,%x,%x],x-y[%d,%d],w-h[%d,%d],vw-vh[%d,%d],f=%d\n",
+        rgaReg.src.yrgb_addr, rgaReg.src.uv_addr, rgaReg.src.v_addr,
+        rgaReg.src.x_offset, rgaReg.src.y_offset,
+        rgaReg.src.act_w, rgaReg.src.act_h,
+        rgaReg.src.vir_w, rgaReg.src.vir_h, rgaReg.src.format);
+    printf("dst:[%x,%x,%x],x-y[%d,%d],w-h[%d,%d],vw-vh[%d,%d],f=%d\n",
+        rgaReg.dst.yrgb_addr, rgaReg.dst.uv_addr, rgaReg.dst.v_addr,
+        rgaReg.dst.x_offset, rgaReg.dst.y_offset,
+        rgaReg.dst.act_w, rgaReg.dst.act_h,
+        rgaReg.dst.vir_w, rgaReg.dst.vir_h, rgaReg.dst.format);
+    printf("pat:[%x,%x,%x],x-y[%d,%d],w-h[%d,%d],vw-vh[%d,%d],f=%d\n",
+        rgaReg.pat.yrgb_addr, rgaReg.pat.uv_addr, rgaReg.pat.v_addr,
+        rgaReg.pat.x_offset, rgaReg.pat.y_offset,
+        rgaReg.pat.act_w, rgaReg.pat.act_h,
+        rgaReg.pat.vir_w, rgaReg.pat.vir_h, rgaReg.pat.format);
+#endif
+    return;
 }
 
 int RockchipRga::RkRgaScale()

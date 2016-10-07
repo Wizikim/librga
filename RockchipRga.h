@@ -94,6 +94,7 @@ public:
                                                    int w, int h, int s, int f);
     void        RkRgaSetLogOnceFlag(int log) {mLogOnce = log;}
     void        RkRgaSetAlwaysLogFlag(bool log) {mLogAlways = log;}
+    void        RkRgaLogOutRgaReq(struct rga_req rgaReg);
 
 
     enum {
