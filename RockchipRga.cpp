@@ -154,6 +154,143 @@ int RockchipRga::RkRgaGetHandleMapAddress(buffer_handle_t handle,
     return ret;
 }
 
+int RockchipRga::RkRgaPaletteTable(buffer_handle_t dst, 
+                                              unsigned int v, drm_rga_t *rects)
+{
+    Mutex::Autolock lock(mMutex);
+
+    //check rects
+    //check buffer_handle_t with rects
+    int srcVirW,srcVirH,srcActW,srcActH,srcXPos,srcYPos;
+    int dstVirW,dstVirH,dstActW,dstActH,dstXPos,dstYPos;
+    int scaleMode,rotateMode,orientation,ditherEn;
+    int srcType,dstType,srcMmuFlag,dstMmuFlag;
+    int planeAlpha;
+    int dstFd = -1;
+    int srcFd = -1;
+    int ret = 0;
+    drm_rga_t tmpRects,relRects;
+    struct rga_req rgaReg;
+    bool perpixelAlpha;
+    void *srcBuf = NULL;
+    void *dstBuf = NULL;
+    RECT clip;
+
+    if (rects && (mLogAlways || mLogOnce)) {
+        ALOGD("Src:[%d,%d,%d,%d][%d,%d,%d]=>Dst:[%d,%d,%d,%d][%d,%d,%d]",
+            rects->src.xoffset,rects->src.yoffset,
+            rects->src.width, rects->src.height, 
+            rects->src.wstride,rects->src.format, rects->src.size,
+            rects->dst.xoffset,rects->dst.yoffset,
+            rects->dst.width, rects->dst.height,
+            rects->dst.wstride,rects->dst.format, rects->dst.size);
+    }
+
+    memset(&rgaReg, 0, sizeof(struct rga_req));
+
+    srcType = dstType = srcMmuFlag = dstMmuFlag = 0;
+
+    ret = RkRgaGetRects(NULL, dst, &srcType, &dstType, &tmpRects);
+    if (ret && !rects) {
+        ALOGE("%d:Has not rects for render", __LINE__);
+        return ret;
+    }
+
+    if (rects) {
+        if (rects->src.wstride > 0 && rects->dst.wstride > 0)
+            memcpy(&relRects, rects, sizeof(drm_rga_t));
+        else if (rects->src.wstride > 0) {
+            memcpy(&(relRects.src), &(rects->src), sizeof(rga_rect_t));
+            memcpy(&(relRects.dst), &(tmpRects.dst), sizeof(rga_rect_t));
+        } else if (rects->dst.wstride > 0) {
+            memcpy(&(relRects.src), &(tmpRects.src), sizeof(rga_rect_t));
+            memcpy(&(relRects.dst), &(rects->dst), sizeof(rga_rect_t));
+        }
+    } else
+        memcpy(&relRects, &tmpRects, sizeof(drm_rga_t));
+
+    if (mLogAlways || mLogOnce) {
+        ALOGD("Src:[%d,%d,%d,%d][%d,%d,%d]=>Dst:[%d,%d,%d,%d][%d,%d,%d]",
+            tmpRects.src.xoffset,tmpRects.src.yoffset,
+            tmpRects.src.width, tmpRects.src.height, 
+            tmpRects.src.wstride,tmpRects.src.format, tmpRects.src.size,
+            tmpRects.dst.xoffset,tmpRects.dst.yoffset,
+            tmpRects.dst.width, tmpRects.dst.height,
+            tmpRects.dst.wstride,tmpRects.dst.format, tmpRects.dst.size);
+        ALOGD("Src:[%d,%d,%d,%d][%d,%d,%d]=>Dst:[%d,%d,%d,%d][%d,%d,%d]",
+            relRects.src.xoffset,relRects.src.yoffset,
+            relRects.src.width, relRects.src.height, 
+            relRects.src.wstride,relRects.src.format, relRects.src.size,
+            relRects.dst.xoffset,relRects.dst.yoffset,
+            relRects.dst.width, relRects.dst.height,
+            relRects.dst.wstride,relRects.dst.format, relRects.dst.size);
+    }
+
+    RkRgaGetHandleMapAddress(dst, &dstBuf);
+    RkRgaGetHandleFd(dst, &dstFd);
+    if (dstFd == -1 && !dstBuf) {
+        ALOGE("%d:dst has not fd and address for render", __LINE__);
+        return ret;
+    }
+
+    if (dstFd == 0 && !dstBuf) {
+        ALOGE("dstFd is zero, now driver not support");
+        return -EINVAL;
+    } else
+        dstFd = -1;
+
+    orientation = 0;
+    rotateMode = 0;
+    srcVirW = relRects.src.wstride;
+    srcVirH = relRects.src.height;
+    srcXPos = relRects.src.xoffset;
+    srcYPos = relRects.src.yoffset;
+    srcActW = relRects.src.width;
+    srcActH = relRects.src.height;
+
+    dstVirW = relRects.dst.wstride;
+    dstVirH = relRects.dst.height;
+    dstXPos = relRects.dst.xoffset;
+    dstYPos = relRects.dst.yoffset;
+    dstActW = relRects.dst.width;
+    dstActH = relRects.dst.height;
+
+    RkRgaSetSrcActiveInfo(&rgaReg, srcActW, srcActH, srcXPos, srcYPos);
+    RkRgaSetDstActiveInfo(&rgaReg, dstActW, dstActH, dstXPos, dstYPos);
+    RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned long)srcBuf,
+                                    (unsigned long)srcBuf + srcVirW * srcVirH, 
+                                    (unsigned long)srcBuf + srcVirW * srcVirH * 5/4,
+                                    srcVirW, srcVirH,
+                                    RkRgaGetRgaFormat(relRects.src.format),0);
+    /*dst*/
+    RkRgaSetDstVirtualInfo(&rgaReg, (unsigned long)dstBuf,
+                                    (unsigned long)dstBuf + dstVirW * dstVirH,
+                                    (unsigned long)dstBuf + dstVirW * dstVirH * 5/4,
+                                    dstVirW, dstVirH, &clip,
+                                    RkRgaGetRgaFormat(relRects.dst.format),0);
+    RkRgaSetPatInfo(&rgaReg, dstVirW, dstVirH,
+                                     dstXPos, dstYPos, relRects.dst.format);
+    RkRgaSetFadingEnInfo(&rgaReg, v & 0xFF000000, v & 0xFF0000, v & 0xFF00);
+
+    /*mode*/
+    RkRgaUpdatePaletteTableMode(&rgaReg, 0, v & 0xFF);
+
+    if (srcMmuFlag || dstMmuFlag) {
+        RkRgaMmuInfo(&rgaReg, 1, 0, 0, 0, 0, 2);
+        RkRgaMmuFlag(&rgaReg, srcMmuFlag, dstMmuFlag);
+    }
+
+    if(ioctl(rgaFd, RGA_BLIT_SYNC, &rgaReg)) {
+        printf(" %s(%d) RGA_BLIT fail",__FUNCTION__, __LINE__);
+        ALOGE(" %s(%d) RGA_BLIT fail",__FUNCTION__, __LINE__);
+    }
+
+    if (mLogOnce)
+        mLogOnce = 0;
+
+    return 0;
+}
+
 int RockchipRga::RkRgaBlit(buffer_handle_t src,
                  buffer_handle_t dst, drm_rga_t *rects, int rotation, int blend)
 {
@@ -415,25 +552,25 @@ int RockchipRga::RkRgaBlit(buffer_handle_t src,
 #if defined(__arm64__) || defined(__aarch64__)
         RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned long)srcBuf,
                                         (unsigned long)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned long)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned long)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
         /*dst*/
         RkRgaSetDstVirtualInfo(&rgaReg, (unsigned long)dstBuf,
                                         (unsigned long)dstBuf + dstVirW * dstVirH,
-                                        (unsigned long)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned long)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #else
         RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned int)srcBuf,
                                         (unsigned int)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned int)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned int)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
         /*dst*/
         RkRgaSetDstVirtualInfo(&rgaReg, (unsigned int)dstBuf,
                                         (unsigned int)dstBuf + dstVirW * dstVirH,
-                                        (unsigned int)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned int)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #endif
@@ -450,13 +587,13 @@ int RockchipRga::RkRgaBlit(buffer_handle_t src,
 #if defined(__arm64__) || defined(__aarch64__)
             RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned long)srcBuf,
                                         (unsigned long)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned long)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned long)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
 #else
             RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned int)srcBuf,
                                         (unsigned int)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned int)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned int)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
 #endif
@@ -473,13 +610,13 @@ int RockchipRga::RkRgaBlit(buffer_handle_t src,
 #if defined(__arm64__) || defined(__aarch64__)
             RkRgaSetDstVirtualInfo(&rgaReg, (unsigned long)dstBuf,
                                         (unsigned long)dstBuf + dstVirW * dstVirH,
-                                        (unsigned long)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned long)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #else
             RkRgaSetDstVirtualInfo(&rgaReg, (unsigned int)dstBuf,
                                         (unsigned int)dstBuf + dstVirW * dstVirH,
-                                        (unsigned int)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned int)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #endif
@@ -768,25 +905,25 @@ int RockchipRga::RkRgaBlit(void *src,
 #if defined(__arm64__) || defined(__aarch64__)
         RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned long)srcBuf,
                                         (unsigned long)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned long)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned long)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
         /*dst*/
         RkRgaSetDstVirtualInfo(&rgaReg, (unsigned long)dstBuf,
                                         (unsigned long)dstBuf + dstVirW * dstVirH,
-                                        (unsigned long)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned long)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #else
         RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned int)srcBuf,
                                         (unsigned int)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned int)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned int)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
         /*dst*/
         RkRgaSetDstVirtualInfo(&rgaReg, (unsigned int)dstBuf,
                                         (unsigned int)dstBuf + dstVirW * dstVirH,
-                                        (unsigned int)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned int)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #endif
@@ -803,13 +940,13 @@ int RockchipRga::RkRgaBlit(void *src,
 #if defined(__arm64__) || defined(__aarch64__)
             RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned long)srcBuf,
                                         (unsigned long)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned long)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned long)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
 #else
             RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned int)srcBuf,
                                         (unsigned int)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned int)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned int)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
 #endif
@@ -826,13 +963,13 @@ int RockchipRga::RkRgaBlit(void *src,
 #if defined(__arm64__) || defined(__aarch64__)
             RkRgaSetDstVirtualInfo(&rgaReg, (unsigned long)dstBuf,
                                         (unsigned long)dstBuf + dstVirW * dstVirH,
-                                        (unsigned long)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned long)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #else
             RkRgaSetDstVirtualInfo(&rgaReg, (unsigned int)dstBuf,
                                         (unsigned int)dstBuf + dstVirW * dstVirH,
-                                        (unsigned int)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned int)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #endif
@@ -1118,25 +1255,25 @@ int RockchipRga::RkRgaBlit(buffer_handle_t src,
 #if defined(__arm64__) || defined(__aarch64__)
         RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned long)srcBuf,
                                         (unsigned long)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned long)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned long)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
         /*dst*/
         RkRgaSetDstVirtualInfo(&rgaReg, (unsigned long)dstBuf,
                                         (unsigned long)dstBuf + dstVirW * dstVirH,
-                                        (unsigned long)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned long)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #else
         RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned int)srcBuf,
                                         (unsigned int)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned int)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned int)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
         /*dst*/
         RkRgaSetDstVirtualInfo(&rgaReg, (unsigned int)dstBuf,
                                         (unsigned int)dstBuf + dstVirW * dstVirH,
-                                        (unsigned int)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned int)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #endif
@@ -1153,13 +1290,13 @@ int RockchipRga::RkRgaBlit(buffer_handle_t src,
 #if defined(__arm64__) || defined(__aarch64__)
             RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned long)srcBuf,
                                         (unsigned long)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned long)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned long)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
 #else
             RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned int)srcBuf,
                                         (unsigned int)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned int)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned int)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
 #endif
@@ -1176,13 +1313,13 @@ int RockchipRga::RkRgaBlit(buffer_handle_t src,
 #if defined(__arm64__) || defined(__aarch64__)
             RkRgaSetDstVirtualInfo(&rgaReg, (unsigned long)dstBuf,
                                         (unsigned long)dstBuf + dstVirW * dstVirH,
-                                        (unsigned long)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned long)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #else
             RkRgaSetDstVirtualInfo(&rgaReg, (unsigned int)dstBuf,
                                         (unsigned int)dstBuf + dstVirW * dstVirH,
-                                        (unsigned int)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned int)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #endif
@@ -1460,25 +1597,25 @@ int RockchipRga::RkRgaBlit(void *src, void *dst,
 #if defined(__arm64__) || defined(__aarch64__)
         RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned long)srcBuf,
                                         (unsigned long)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned long)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned long)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
         /*dst*/
         RkRgaSetDstVirtualInfo(&rgaReg, (unsigned long)dstBuf,
                                         (unsigned long)dstBuf + dstVirW * dstVirH,
-                                        (unsigned long)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned long)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #else
         RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned int)srcBuf,
                                         (unsigned int)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned int)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned int)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
         /*dst*/
         RkRgaSetDstVirtualInfo(&rgaReg, (unsigned int)dstBuf,
                                         (unsigned int)dstBuf + dstVirW * dstVirH,
-                                        (unsigned int)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned int)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #endif
@@ -1495,13 +1632,13 @@ int RockchipRga::RkRgaBlit(void *src, void *dst,
 #if defined(__arm64__) || defined(__aarch64__)
             RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned long)srcBuf,
                                         (unsigned long)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned long)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned long)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
 #else
             RkRgaSetSrcVirtualInfo(&rgaReg, (unsigned int)srcBuf,
                                         (unsigned int)srcBuf + srcVirW * srcVirH, 
-                                        (unsigned int)srcBuf + srcVirW * srcVirH * 1.25,
+                                        (unsigned int)srcBuf + srcVirW * srcVirH * 5/4,
                                         srcVirW, srcVirH,
                                         RkRgaGetRgaFormat(relRects.src.format),0);
 #endif
@@ -1518,13 +1655,13 @@ int RockchipRga::RkRgaBlit(void *src, void *dst,
 #if defined(__arm64__) || defined(__aarch64__)
             RkRgaSetDstVirtualInfo(&rgaReg, (unsigned long)dstBuf,
                                         (unsigned long)dstBuf + dstVirW * dstVirH,
-                                        (unsigned long)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned long)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #else
             RkRgaSetDstVirtualInfo(&rgaReg, (unsigned int)dstBuf,
                                         (unsigned int)dstBuf + dstVirW * dstVirH,
-                                        (unsigned int)dstBuf + dstVirW * dstVirH * 1.25,
+                                        (unsigned int)dstBuf + dstVirW * dstVirH * 5/4,
                                         dstVirW, dstVirH, &clip,
                                         RkRgaGetRgaFormat(relRects.dst.format),0);
 #endif
@@ -1834,7 +1971,7 @@ int RockchipRga::RkRgaSetRopEnInfo(struct rga_req *msg,
 {
     msg->alpha_rop_flag |= (0x3);
     msg->alpha_rop_mode |= ((ROP_mode & 3) << 2);
-      
+
     msg->rop_code = ROP_code;
     msg->color_fill_mode = color_mode;
     msg->fg_color = solid_color;

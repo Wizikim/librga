@@ -72,6 +72,8 @@ public:
                                       drm_rga_t *rects, int rotation, int blend);
     int         RkRgaBlit(void *src, void *dst,
                                       drm_rga_t *rects, int rotation, int blend);
+    int         RkRgaPaletteTable(buffer_handle_t dst, 
+                                               unsigned int v, drm_rga_t *rects);
 
     int         RkRgaStereo(buffer_handle_t src,
                                                     buffer_handle_t dst,int div);
